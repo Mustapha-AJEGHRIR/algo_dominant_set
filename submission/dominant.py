@@ -1,16 +1,18 @@
 import sys, os, time
 import networkx as nx
+from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
 import pylab as plt
-from time import time
-from random import choices
+from random import choices, random
 
 
 # --------------------------------- Constants -------------------------------- #
 SHOW = 0
-DURATION = 1 #Duration for each round
+DURATION = 5 #Duration for each round
+PROBA = 0.001 #Proba of using dominant search
+POWER = 15 #When chosing probilities, this helps to shap the choices
 
 S = 0
-def dominant2(g_original : nx.classes.graph.Graph):
+def dominant2(g_original : nx.classes.graph.Graph, name, f=[1]):
     """
         A Faire:         
         - Ecrire une fonction qui retourne le dominant du graphe non dirigé g passé en parametre.
@@ -19,10 +21,12 @@ def dominant2(g_original : nx.classes.graph.Graph):
         :param g: le graphe est donné dans le format networkx : https://networkx.github.io/documentation/stable/reference/classes/graph.html
 
     """
-    start = time()
-    dom_sets = []
-    dom_weight = []
-    while time() - start < DURATION:
+    start = time.time()
+    dom_sets : list[list[int]] = []
+    dom_weights : list[int]= []
+    i = 0
+    while time.time() - start < DURATION:
+        i+=1
         g : nx.classes.graph.Graph = g_original.copy()
         dom_set : list[int] = []
         while not nx.is_dominating_set(g_original, dom_set):
@@ -30,19 +34,26 @@ def dominant2(g_original : nx.classes.graph.Graph):
             degrees : list[(int, int)] = nx.degree(g)                       #list((node,deg))
             ratios : dict[int,int] = {}
             for node, deg in degrees :
-                assert weights[node] != 0, "Weights of node " + str(node) + " is equal to 0"
-                ratios[node] = deg/weights[node]
-            
-            best :int = max(ratios, key=lambda x: ratios[x])
+                ratios[node] = (deg/weights[node])**POWER
+            ratios_items : list[(int, int)]= list(ratios.items())
+            best :int = choices(ratios_items, weights=[w for _,w in ratios_items])[0][0]
             dom_set.append(best)
             g.remove_node(best)
+            if PROBA > random(): #Abandon this and go for deterministic search to complete the already found stuff
+                break
+        if not nx.is_dominating_set(g_original, dom_set): # Make it domiante
+            dom_set += list(nx.dominating_set(g))
         weight = 0
         weights : dict[int,int]= nx.get_node_attributes(g_original, 'weight')    #dict(node) -> weigth
         for node in dom_set:
             weight += weights[node]
-        dom_weight.append(weight)
+        dom_weights.append(weight)
         dom_sets.append(dom_set)
-    
+    dom_set = dom_sets[ dom_weights.index( min(dom_weights) ) ]
+    print("*"*10, " For : ", graph_filename); f[0] += 1
+    print("Iterations = ", i, end ="\t")
+    print("len of dom_set = ", len(dom_set), "\tTotal of nodes = ", len(g_original.nodes), "\tweight = ", min(dom_weights))
+    print()
     # print("len of dom_set =", len(dom_set), "   nb of node =", len(g_original.nodes))
     # weight = 0
     # weights : dict[int,int]= nx.get_node_attributes(g_original, 'weight')    #dict(node) -> weigth
@@ -68,7 +79,7 @@ def dominant(g : nx.classes.graph.Graph, first=[2]):
         plt.show()
         first[0] -= 1
     # print(nx.info(g[0]))
-    return nx.dominating_set(g)  # pas terrible :) mais c'est un dominant
+    return nx.dominating_set(g)
 
 #########################################
 #### Ne pas modifier le code suivant ####
@@ -144,7 +155,7 @@ if __name__ == "__main__":
         g = load_graph(os.path.join(input_dir, graph_filename))
 
         # calcul du dominant
-        D = sorted(dominant2(g), key=lambda x: int(x))
+        D = sorted(dominant2(g, graph_filename), key=lambda x: int(x))
 
         # ajout au rapport
         weights = nx.get_node_attributes(g, 'weight')
