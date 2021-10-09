@@ -1,17 +1,70 @@
 import sys, os, time
 import networkx as nx
-from networkx.algorithms.graph_hashing import weisfeiler_lehman_graph_hash
-import pylab as plt
+
 from random import choices, random
+from scipy.optimize import linprog
 
 
 # --------------------------------- Constants -------------------------------- #
 SHOW = 0
-DURATION = 5 #Duration for each round
-PROBA = 0.001 #Proba of using dominant search
-POWER = 15 #When chosing probilities, this helps to shap the choices
+DURATION = 2 #Duration for each round
+PROBA = 0.01 #Proba of using dominant search
+POWER = 8 #When chosing probilities, this helps to shap the choices
 
 S = 0
+START = time.time()
+def dominant3(g_original : nx.classes.graph.Graph, name, f=[1]):
+    start = time.time()
+    # ------------------------------- Solve the LP ------------------------------- #
+    weights : dict[int,int]= nx.get_node_attributes(g_original, 'weight')
+    adjacency : list[list[int]] = []
+    for i in range(len(weights)):
+        adjacency.append(list(g_original.neighbors(i)))
+    
+    obj : list[int] = [w for _,w in sorted(list(weights.items()))]  #The weights of our linear prog
+    lhs_ineq : list[list[int]] = []                                 #Coefs of the inequalities "<="
+    for node in range(len(weights)):
+        one_lhs_ineq = [0]*len(weights)
+        for neighbor in adjacency[node]:
+            one_lhs_ineq[neighbor] = -1
+        one_lhs_ineq[node] = -1
+        lhs_ineq.append(one_lhs_ineq)
+    rhs_ineq = [-1]*len(weights)                                     #Coefs of the right side "<= coef"
+    bnd : list[(int,int)] = [(0, 1)]*len(weights)
+    x0 = [1]*len(weights)
+    opt : linprog() = linprog(c = obj, A_ub = lhs_ineq, b_ub = rhs_ineq, bounds = bnd, x0 = x0)
+    dom_sets : list[list[int]] = []
+    dom_weights : list[int]= []
+    i = 0
+    tic = time.time()
+    while time.time() - tic < DURATION and i<300:
+        i += 1
+        dom_set :list[int] = []
+        X = opt.x.copy()
+        X **= POWER
+        while not nx.is_dominating_set(g_original, dom_set):
+            best :int = choices(list(enumerate(X)), weights=X)[0][0]
+            dom_set.append(best)
+            X[best] = 0
+        weight = 0
+        for node in dom_set:
+            weight += weights[node]
+        dom_sets.append(dom_set)
+        dom_weights.append(weight)
+
+    dom_set = dom_sets[ dom_weights.index( min(dom_weights) ) ]
+    # -------------------------------- Real weight ------------------------------- #
+    weight = 0
+    for node in dom_set:
+        weight += weights[node]
+    
+    print("*"*10, " For : ", name); f[0] += 1
+    print("its : ", i, "Min weight =", opt.fun, "\t", opt.success, "\t", "Real weight =", weight)
+    print(f"Total time = {(time.time() - start):.2f}s")
+    print()
+    return dom_set
+
+
 def dominant2(g_original : nx.classes.graph.Graph, name, f=[1]):
     """
         A Faire:         
@@ -36,6 +89,13 @@ def dominant2(g_original : nx.classes.graph.Graph, name, f=[1]):
             for node, deg in degrees :
                 ratios[node] = (deg/weights[node])**POWER
             ratios_items : list[(int, int)]= list(ratios.items())
+            # ---------------------------------------------------------------------------- #
+            #                               One thig to know                               #
+            # ---------------------------------------------------------------------------- #
+            # I have to save all the neighbors of previously taken nodes, so I don't take them again 
+
+
+
             best :int = choices(ratios_items, weights=[w for _,w in ratios_items])[0][0]
             dom_set.append(best)
             g.remove_node(best)
@@ -50,10 +110,9 @@ def dominant2(g_original : nx.classes.graph.Graph, name, f=[1]):
         dom_weights.append(weight)
         dom_sets.append(dom_set)
     dom_set = dom_sets[ dom_weights.index( min(dom_weights) ) ]
-    print("*"*10, " For : ", graph_filename); f[0] += 1
+    print("*"*10, " For : ", name); f[0] += 1
     print("Iterations = ", i, end ="\t")
     print("len of dom_set = ", len(dom_set), "\tTotal of nodes = ", len(g_original.nodes), "\tweight = ", min(dom_weights))
-    print()
     # print("len of dom_set =", len(dom_set), "   nb of node =", len(g_original.nodes))
     # weight = 0
     # weights : dict[int,int]= nx.get_node_attributes(g_original, 'weight')    #dict(node) -> weigth
@@ -64,22 +123,22 @@ def dominant2(g_original : nx.classes.graph.Graph, name, f=[1]):
 
 
 
-def dominant(g : nx.classes.graph.Graph, first=[2]):
-    """
-        A Faire:         
-        - Ecrire une fonction qui retourne le dominant du graphe non dirigé g passé en parametre.
-        - cette fonction doit retourner la liste des noeuds d'un petit dominant de g
+# def dominant(g : nx.classes.graph.Graph, first=[2]):
+#     """
+#         A Faire:         
+#         - Ecrire une fonction qui retourne le dominant du graphe non dirigé g passé en parametre.
+#         - cette fonction doit retourner la liste des noeuds d'un petit dominant de g
 
-        :param g: le graphe est donné dans le format networkx : https://networkx.github.io/documentation/stable/reference/classes/graph.html
+#         :param g: le graphe est donné dans le format networkx : https://networkx.github.io/documentation/stable/reference/classes/graph.html
 
-    """
+#     """
 
-    if SHOW and first[0] > 0 :
-        nx.draw(g)
-        plt.show()
-        first[0] -= 1
-    # print(nx.info(g[0]))
-    return nx.dominating_set(g)
+#     if SHOW and first[0] > 0 :
+#         nx.draw(g)
+#         plt.show()
+#         first[0] -= 1
+#     # print(nx.info(g[0]))
+#     return nx.dominating_set(g)
 
 #########################################
 #### Ne pas modifier le code suivant ####
@@ -155,8 +214,7 @@ if __name__ == "__main__":
         g = load_graph(os.path.join(input_dir, graph_filename))
 
         # calcul du dominant
-        D = sorted(dominant2(g, graph_filename), key=lambda x: int(x))
-
+        D = sorted(dominant3(g, graph_filename), key=lambda x: int(x))
         # ajout au rapport
         weights = nx.get_node_attributes(g, 'weight')
         output_file.write(graph_filename)
@@ -168,3 +226,4 @@ if __name__ == "__main__":
     output_file.close()
 
 print("Sum of weights = ", S)
+print("Total time :", time.time() - START,"s")
