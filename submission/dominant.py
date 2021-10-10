@@ -2,17 +2,78 @@ import sys, os, time
 import networkx as nx
 
 from random import choices, random
+from networkx.algorithms.dominating import is_dominating_set
 from scipy.optimize import linprog
 
 
 # --------------------------------- Constants -------------------------------- #
 SHOW = 0
-DURATION = 2 #Duration for each round
-PROBA = 0.01 #Proba of using dominant search
+DURATION = 1 #Duration for each round
+PROBA = 0 #Proba of using dominant search
 POWER = 8 #When chosing probilities, this helps to shap the choices
 
 S = 0
 START = time.time()
+def dominant4(g_original : nx.classes.graph.Graph, name, f=[1]):
+    start = time.time()
+    # ------------------------------- Solve the LP ------------------------------- #
+    weights : dict[int,int]= nx.get_node_attributes(g_original, 'weight')
+    total_edges_twice = 0
+    adjacency : list[list[int]] = []
+    for i in range(len(weights)):
+        total_edges_twice += len(list(g_original.neighbors(i)))
+        adjacency.append(list(g_original.neighbors(i)))
+    
+    obj : list[int] = [w for _,w in sorted(list(weights.items()))]  #The weights of our linear prog
+    lhs_ineq : list[list[int]] = []                                 #Coefs of the inequalities "<="
+    for node in range(len(weights)):
+        one_lhs_ineq = [0]*len(weights)
+        for neighbor in adjacency[node]:
+            one_lhs_ineq[neighbor] = -1
+        one_lhs_ineq[node] = -1
+        lhs_ineq.append(one_lhs_ineq)
+    rhs_ineq = [-1]*len(weights)                                     #Coefs of the right side "<= coef"
+    bnd : list[(int,int)] = [(0, 1)]*len(weights)
+    x0 = [1]*len(weights)
+    opt : linprog() = linprog(c = obj, A_ub = lhs_ineq, b_ub = rhs_ineq, bounds = bnd, x0 = x0)
+    dom_sets : list[set[int]] = []
+    dom_weights : list[int]= []
+    i = 0
+    tic = time.time()
+    while time.time() - tic < DURATION and i<300:
+        i += 1
+        dom_set :set[int] = set(range(len(weights)))
+        X = 1-opt.x.copy()
+        X **= POWER
+        fails = 0
+        while fails < total_edges_twice/2:
+            worst :int = choices(list(enumerate(X)), weights=X)[0][0]
+            if (nx.is_dominating_set(g, dom_set.difference(set({worst})))):
+                dom_set = dom_set.difference(set({worst}))
+                X[worst] = 0
+            else :
+                fails += 1
+        weight = 0
+        for node in dom_set:
+            weight += weights[node]
+        dom_sets.append(dom_set)
+        dom_weights.append(weight)
+
+    dom_set = dom_sets[ dom_weights.index( min(dom_weights) ) ]
+    # -------------------------------- Real weight ------------------------------- #
+    weight = 0
+    for node in dom_set:
+        weight += weights[node]
+    
+    print("*"*10, " For : ", name); f[0] += 1
+    print("its : ", i, "Min weight =", opt.fun, "\t", opt.success, "\t", "Real weight =", weight)
+    print(f"Total time = {(time.time() - start):.2f}s")
+    print()
+    return dom_set
+
+
+
+
 def dominant3(g_original : nx.classes.graph.Graph, name, f=[1]):
     start = time.time()
     # ------------------------------- Solve the LP ------------------------------- #
@@ -46,6 +107,8 @@ def dominant3(g_original : nx.classes.graph.Graph, name, f=[1]):
             best :int = choices(list(enumerate(X)), weights=X)[0][0]
             dom_set.append(best)
             X[best] = 0
+            for neighbor in adjacency [best]:
+                X[best] = 0
         weight = 0
         for node in dom_set:
             weight += weights[node]
@@ -65,6 +128,8 @@ def dominant3(g_original : nx.classes.graph.Graph, name, f=[1]):
     return dom_set
 
 
+
+
 def dominant2(g_original : nx.classes.graph.Graph, name, f=[1]):
     """
         A Faire:         
@@ -82,23 +147,21 @@ def dominant2(g_original : nx.classes.graph.Graph, name, f=[1]):
         i+=1
         g : nx.classes.graph.Graph = g_original.copy()
         dom_set : list[int] = []
+        black_list : set[int] = set({})
         while not nx.is_dominating_set(g_original, dom_set):
             weights : dict[int,int]= nx.get_node_attributes(g, 'weight')    #dict(node) -> weigth
             degrees : list[(int, int)] = nx.degree(g)                       #list((node,deg))
             ratios : dict[int,int] = {}
             for node, deg in degrees :
                 ratios[node] = (deg/weights[node])**POWER
+                if node in black_list :
+                    ratios[node] = 0
             ratios_items : list[(int, int)]= list(ratios.items())
-            # ---------------------------------------------------------------------------- #
-            #                               One thig to know                               #
-            # ---------------------------------------------------------------------------- #
-            # I have to save all the neighbors of previously taken nodes, so I don't take them again 
-
-
 
             best :int = choices(ratios_items, weights=[w for _,w in ratios_items])[0][0]
             dom_set.append(best)
             g.remove_node(best)
+            black_list = black_list.union(set(g_original.neighbors(best)))
             if PROBA > random(): #Abandon this and go for deterministic search to complete the already found stuff
                 break
         if not nx.is_dominating_set(g_original, dom_set): # Make it domiante
@@ -214,7 +277,7 @@ if __name__ == "__main__":
         g = load_graph(os.path.join(input_dir, graph_filename))
 
         # calcul du dominant
-        D = sorted(dominant3(g, graph_filename), key=lambda x: int(x))
+        D = sorted(dominant4(g, graph_filename), key=lambda x: int(x))
         # ajout au rapport
         weights = nx.get_node_attributes(g, 'weight')
         output_file.write(graph_filename)
