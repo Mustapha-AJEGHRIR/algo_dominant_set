@@ -2,15 +2,17 @@ import sys, os, time
 import networkx as nx
 
 from random import choices, random
-from networkx.algorithms.dominating import is_dominating_set
 from scipy.optimize import linprog
+from scipy.optimize.optimize import bracket
+
 
 
 # --------------------------------- Constants -------------------------------- #
 SHOW = 0
-DURATION = 1 #Duration for each round
+DURATION = 2 #Duration for each round
+REPETITIONS = 1000 #Max number of times you can restart random choices
 PROBA = 0 #Proba of using dominant search
-POWER = 8 #When chosing probilities, this helps to shap the choices
+POWER = 5 #When chosing probilities, this helps to shap the choices
 
 S = 0
 START = time.time()
@@ -35,19 +37,23 @@ def dominant4(g_original : nx.classes.graph.Graph, name, f=[1]):
     rhs_ineq = [-1]*len(weights)                                     #Coefs of the right side "<= coef"
     bnd : list[(int,int)] = [(0, 1)]*len(weights)
     x0 = [1]*len(weights)
-    opt : linprog() = linprog(c = obj, A_ub = lhs_ineq, b_ub = rhs_ineq, bounds = bnd, x0 = x0)
+    opt : linprog() = linprog(c = obj, A_ub = lhs_ineq, b_ub = rhs_ineq, bounds = bnd , x0 = x0)
     dom_sets : list[set[int]] = []
     dom_weights : list[int]= []
     i = 0
     tic = time.time()
-    while time.time() - tic < DURATION and i<300:
+    while time.time() - tic < DURATION and i<REPETITIONS:
         i += 1
         dom_set :set[int] = set(range(len(weights)))
         X = 1-opt.x.copy()
         X **= POWER
         fails = 0
-        while fails < total_edges_twice/2:
-            worst :int = choices(list(enumerate(X)), weights=X)[0][0]
+        coef = random()*5+1
+        while fails < total_edges_twice/coef:
+            try :
+                worst :int = choices(list(enumerate(X)), weights=X)[0][0]
+            except :
+                break
             if (nx.is_dominating_set(g, dom_set.difference(set({worst})))):
                 dom_set = dom_set.difference(set({worst}))
                 X[worst] = 0
@@ -58,6 +64,8 @@ def dominant4(g_original : nx.classes.graph.Graph, name, f=[1]):
             weight += weights[node]
         dom_sets.append(dom_set)
         dom_weights.append(weight)
+        if weight <= opt.fun:
+            break
 
     dom_set = dom_sets[ dom_weights.index( min(dom_weights) ) ]
     # -------------------------------- Real weight ------------------------------- #
