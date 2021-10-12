@@ -3,8 +3,16 @@ import networkx as nx
 
 from random import choices, random
 from scipy.optimize import linprog
-from scipy.optimize.optimize import bracket
 
+
+from sys import path as syspath
+
+# ----------------------------------- PulP ----------------------------------- #
+dir = "/".join(sys.argv[0].split('/')[:-1])
+print(dir)
+print(os.path.join(dir ,'PuLP-2.5.1'))
+syspath.append(os.path.join(dir ,'PuLP-2.5.1'))
+import pulp
 
 
 # --------------------------------- Constants -------------------------------- #
@@ -14,8 +22,54 @@ REPETITIONS = 1000 #Max number of times you can restart random choices
 PROBA = 0 #Proba of using dominant search
 POWER = 5 #When chosing probilities, this helps to shap the choices
 
+# ------------------------------------ ILP ----------------------------------- #
+DURATION_ILP = 100
+
+
 S = 0
 START = time.time()
+def dominant5(g_original : nx.classes.graph.Graph, name, f=[1]):
+    start = time.time()
+    weights : dict[int,int]= nx.get_node_attributes(g_original, 'weight')
+    adjacency : list[list[int]] = []
+    for i in range(len(weights)):
+        adjacency.append(list(g_original.neighbors(i)))
+    
+    # ------------------------------------ ILP ----------------------------------- #
+    model = pulp.LpProblem(name="small-problem", sense=pulp.LpMinimize)
+    variables = []
+    obj = 0
+    for node in range(len(weights)): #Variables
+        variables.append(pulp.LpVariable(name=str(node), lowBound=0, upBound=1, cat= "Integer"))
+        obj += variables[node] * weights[node]
+    model += obj
+    for node in range(len(weights)): #Constraints
+        constraint = variables[node]
+        for neighbor in adjacency[node]:
+            constraint += variables[neighbor]
+        constraint = constraint >= 1
+        model += constraint
+
+    # print(pulp.listSolvers(onlyAvailable=True))
+    # ---------------------------------- solver ---------------------------------- #
+    solver = pulp.PULP_CBC_CMD(timeLimit=DURATION_ILP, msg=0)
+    status = model.solve(solver)
+
+    # ----------------------------------- Build ---------------------------------- #
+    dom_set = []
+    for var in model.variables():
+        if var.value() == 1:
+            dom_set.append(int(var.name))
+    weight = 0
+    for node in dom_set:
+        weight += weights[node]
+    
+    print("*"*10, " For : ", name); f[0] += 1
+    print("Min weight =", model.objective.value(), "\t", status, "\t", "Real weight =", weight)
+    print(f"Total time = {(time.time() - start):.2f}s")
+    return dom_set
+    
+
 def dominant4(g_original : nx.classes.graph.Graph, name, f=[1]):
     start = time.time()
     # ------------------------------- Solve the LP ------------------------------- #
@@ -285,7 +339,7 @@ if __name__ == "__main__":
         g = load_graph(os.path.join(input_dir, graph_filename))
 
         # calcul du dominant
-        D = sorted(dominant4(g, graph_filename), key=lambda x: int(x))
+        D = sorted(dominant5(g, graph_filename), key=lambda x: int(x))
         # ajout au rapport
         weights = nx.get_node_attributes(g, 'weight')
         output_file.write(graph_filename)
