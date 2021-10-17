@@ -4,18 +4,20 @@ import networkx as nx
 from random import choices, random
 from scipy.optimize import linprog
 
-from sys import path as syspath
+# from sys import path as syspath
 
+# ------------------------------ multiprocessing ----------------------------- #
+import multiprocessing as mp
 
-# ---------------------------------- Gurobi ---------------------------------- #
-import gurobipy as gp
-from gurobipy import GRB
+# # ---------------------------------- Gurobi ---------------------------------- #
+# import gurobipy as gp
+# from gurobipy import GRB
 
 # ----------------------------------- PulP ----------------------------------- #
 dir = "/".join(sys.argv[0].split('/')[:-1])
 # print(dir)
 # print(os.path.join(dir ,'PuLP-2.5.1'))
-# syspath.append(os.path.join(dir ,'PuLP-2.5.1'))
+sys.path.append(os.path.join(dir ,'PuLP-2.5.1'))
 import pulp
 
 
@@ -27,7 +29,7 @@ PROBA = 0 #Proba of using dominant search
 POWER = 5 #When chosing probilities, this helps to shap the choices
 
 # ------------------------------------ ILP ----------------------------------- #
-DURATION_ILP = 1
+DURATION_ILP = 16
 
 
 S = 0
@@ -100,7 +102,7 @@ def dominant5(g_original : nx.classes.graph.Graph, name, f=[1]):
         
     # print(pulp.listSolvers(onlyAvailable=True))
     # ---------------------------------- solver ---------------------------------- #
-    solver = pulp.PULP_CBC_CMD(timeLimit=DURATION_ILP, msg=0, threads=1)
+    solver = pulp.PULP_CBC_CMD(timeLimit=DURATION_ILP, msg=0, threads=8)
     
     # path = os.path.join(dir, "/gurobi_ampl")
     # # print(pulp.pulpTestAll())
@@ -118,7 +120,7 @@ def dominant5(g_original : nx.classes.graph.Graph, name, f=[1]):
     for node in dom_set:
         weight += weights[node]
 
-    assert nx.is_dominating_set(g_original, dom_set), "Not a dominant set"    
+    # assert nx.is_dominating_set(g_original, dom_set), "Not a dominant set"    
     print("*"*10, " For : ", name); f[0] += 1
     print("Min weight =", model.objective.value(), "\t", status, "\t", "Real weight =", weight)
     print(f"Total time = {(time.time() - start):.2f}s")
@@ -320,9 +322,6 @@ def dominant2(g_original : nx.classes.graph.Graph, name, f=[1]):
 #     # print(nx.info(g[0]))
 #     return nx.dominating_set(g)
 
-#########################################
-#### Ne pas modifier le code suivant ####
-#########################################
 
 
 def load_graph(name):
@@ -367,10 +366,21 @@ def load_graph(name):
 
         return G
 
+def answer(graph_filename, input_dir, output_file, shared_list, dom_sets_final):
+    # importer le graphe
+    g = load_graph(os.path.join(input_dir, graph_filename))
 
-#########################################
-#### Ne pas modifier le code suivant ####
-#########################################
+    # calcul du dominant
+    D = sorted(dominant5(g, graph_filename), key=lambda x: int(x))
+    dom_sets_final[graph_filename] = D
+    # ajout au rapport
+    weights = nx.get_node_attributes(g, 'weight')
+    S = 0 #Weight of this graph
+    for node in D:
+        S += weights[node]
+    shared_list.append(S)
+
+
 if __name__ == "__main__":
     input_dir = os.path.abspath(sys.argv[1])
     output_dir = os.path.abspath(sys.argv[2])
@@ -389,21 +399,25 @@ if __name__ == "__main__":
     output_filename = 'answers_{}.txt'.format(time.strftime("%d%b%Y_%H%M%S", time.localtime()))
     output_file = open(os.path.join(output_dir, output_filename), 'w')
 
+    all_process = []
+    manager = mp.Manager()
+    shared_list = manager.list()
+    dom_sets_final = manager.dict()
     for graph_filename in sorted(os.listdir(input_dir)):
-        # importer le graphe
-        g = load_graph(os.path.join(input_dir, graph_filename))
-
-        # calcul du dominant
-        D = sorted(dominant6(g, graph_filename), key=lambda x: int(x))
-        # ajout au rapport
-        weights = nx.get_node_attributes(g, 'weight')
+        all_process.append(mp.Process(target= answer, args=(graph_filename, input_dir, output_file, shared_list, dom_sets_final)))
+        # answer(graph_filename, input_dir, output_file, shared_list)
+    for process in all_process:
+        process.start()
+    for process in all_process:
+        process.join()
+    
+    for graph_filename in sorted(os.listdir(input_dir)):
         output_file.write(graph_filename)
-        for node in D:
+        for node in dom_sets_final[graph_filename]:
             output_file.write(' {}'.format(node))
-            S += weights[node]
         output_file.write('\n')
-
+    
     output_file.close()
+    print("Sum of weights = ", sum(shared_list))
 
-print("Sum of weights = ", S)
 print("Total time :", time.time() - START,"s")
