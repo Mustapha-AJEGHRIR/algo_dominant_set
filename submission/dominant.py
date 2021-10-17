@@ -27,7 +27,7 @@ PROBA = 0 #Proba of using dominant search
 POWER = 5 #When chosing probilities, this helps to shap the choices
 
 # ------------------------------------ ILP ----------------------------------- #
-DURATION_ILP = 8
+DURATION_ILP = 1
 
 
 S = 0
