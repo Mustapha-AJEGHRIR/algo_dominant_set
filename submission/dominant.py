@@ -4,14 +4,18 @@ import networkx as nx
 from random import choices, random
 from scipy.optimize import linprog
 
-
 from sys import path as syspath
+
+
+# ---------------------------------- Gurobi ---------------------------------- #
+import gurobipy as gp
+from gurobipy import GRB
 
 # ----------------------------------- PulP ----------------------------------- #
 dir = "/".join(sys.argv[0].split('/')[:-1])
-print(dir)
-print(os.path.join(dir ,'PuLP-2.5.1'))
-syspath.append(os.path.join(dir ,'PuLP-2.5.1'))
+# print(dir)
+# print(os.path.join(dir ,'PuLP-2.5.1'))
+# syspath.append(os.path.join(dir ,'PuLP-2.5.1'))
 import pulp
 
 
@@ -23,11 +27,55 @@ PROBA = 0 #Proba of using dominant search
 POWER = 5 #When chosing probilities, this helps to shap the choices
 
 # ------------------------------------ ILP ----------------------------------- #
-DURATION_ILP = 100
+DURATION_ILP = 8
 
 
 S = 0
 START = time.time()
+def dominant6(g_original : nx.classes.graph.Graph, name, f=[1]):
+    start = time.time()
+    weights : dict[int,int]= nx.get_node_attributes(g_original, 'weight')
+    adjacency : list[list[int]] = []
+    for i in range(len(weights)):
+        adjacency.append(list(g_original.neighbors(i)))
+    
+    # ------------------------------------ ILP ----------------------------------- #
+    model = gp.Model("mip1")
+    model.setParam('TimeLimit', DURATION_ILP)
+    model.setParam('Threads', 1)
+
+    variables = []
+    obj = 0
+    for node in range(len(weights)): #Variables
+        variables.append(model.addVar(vtype=GRB.BINARY, name=str(node)))
+        obj += variables[node] * weights[node]
+    model.setObjective(obj, GRB.MINIMIZE)
+    for node in range(len(weights)): #Constraints
+        constraint = variables[node]
+        for neighbor in adjacency[node]:
+            constraint += variables[neighbor]
+        constraint = constraint >= 1
+        model.addConstr(constraint, str(i))
+        
+    # ---------------------------------- solver ---------------------------------- #
+    model.optimize()
+
+    # ----------------------------------- Build ---------------------------------- #
+    dom_set = []
+    for var in model.getVars():
+        if var.x == 1:
+            dom_set.append(int(var.varName))
+    weight = 0
+    for node in dom_set:
+        weight += weights[node]
+
+    assert nx.is_dominating_set(g_original, dom_set), "Not a dominant set"    
+    print("*"*10, " For : ", name); f[0] += 1
+    # print("Min weight =", model.objective.value(), "\t", status, "\t", "Real weight =", weight)
+    print(f"Total time = {(time.time() - start):.2f}s")
+    return dom_set
+
+
 def dominant5(g_original : nx.classes.graph.Graph, name, f=[1]):
     start = time.time()
     weights : dict[int,int]= nx.get_node_attributes(g_original, 'weight')
@@ -40,7 +88,7 @@ def dominant5(g_original : nx.classes.graph.Graph, name, f=[1]):
     variables = []
     obj = 0
     for node in range(len(weights)): #Variables
-        variables.append(pulp.LpVariable(name=str(node), lowBound=0, upBound=1, cat= "Integer"))
+        variables.append(pulp.LpVariable(name=str(node), lowBound=0, upBound=1, cat= "Binary"))
         obj += variables[node] * weights[node]
     model += obj
     for node in range(len(weights)): #Constraints
@@ -49,10 +97,16 @@ def dominant5(g_original : nx.classes.graph.Graph, name, f=[1]):
             constraint += variables[neighbor]
         constraint = constraint >= 1
         model += constraint
-
+        
     # print(pulp.listSolvers(onlyAvailable=True))
     # ---------------------------------- solver ---------------------------------- #
-    solver = pulp.PULP_CBC_CMD(timeLimit=DURATION_ILP, msg=0)
+    solver = pulp.PULP_CBC_CMD(timeLimit=DURATION_ILP, msg=0, threads=1)
+    
+    # path = os.path.join(dir, "/gurobi_ampl")
+    # # print(pulp.pulpTestAll())
+    # # print(path)
+    # solver = pulp.GUROBI(path=path, mip=1)
+
     status = model.solve(solver)
 
     # ----------------------------------- Build ---------------------------------- #
@@ -63,7 +117,8 @@ def dominant5(g_original : nx.classes.graph.Graph, name, f=[1]):
     weight = 0
     for node in dom_set:
         weight += weights[node]
-    
+
+    assert nx.is_dominating_set(g_original, dom_set), "Not a dominant set"    
     print("*"*10, " For : ", name); f[0] += 1
     print("Min weight =", model.objective.value(), "\t", status, "\t", "Real weight =", weight)
     print(f"Total time = {(time.time() - start):.2f}s")
@@ -339,7 +394,7 @@ if __name__ == "__main__":
         g = load_graph(os.path.join(input_dir, graph_filename))
 
         # calcul du dominant
-        D = sorted(dominant5(g, graph_filename), key=lambda x: int(x))
+        D = sorted(dominant6(g, graph_filename), key=lambda x: int(x))
         # ajout au rapport
         weights = nx.get_node_attributes(g, 'weight')
         output_file.write(graph_filename)
