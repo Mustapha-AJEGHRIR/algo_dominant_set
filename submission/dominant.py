@@ -31,7 +31,6 @@ POWER = 5 #When chosing probilities, this helps to shap the choices
 # ------------------------------------ ILP ----------------------------------- #
 DURATION_ILP = 16
 
-
 S = 0
 START = time.time()
 def dominant6(g_original : nx.classes.graph.Graph, name, f=[1]):
@@ -102,7 +101,7 @@ def dominant5(g_original : nx.classes.graph.Graph, name, f=[1]):
         
     # print(pulp.listSolvers(onlyAvailable=True))
     # ---------------------------------- solver ---------------------------------- #
-    solver = pulp.PULP_CBC_CMD(timeLimit=DURATION_ILP, msg=0, threads=8)
+    solver = pulp.PULP_CBC_CMD(timeLimit=DURATION_ILP, msg=0, threads=7)
     
     # path = os.path.join(dir, "/gurobi_ampl")
     # # print(pulp.pulpTestAll())
