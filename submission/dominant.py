@@ -14,10 +14,10 @@ import multiprocessing as mp
 # from gurobipy import GRB
 
 # ----------------------------------- PulP ----------------------------------- #
-dir = "/".join(sys.argv[0].split('/')[:-1])
-# print(dir)
-# print(os.path.join(dir ,'PuLP-2.5.1'))
-sys.path.append(os.path.join(dir ,'PuLP-2.5.1'))
+# dir = "/".join(sys.argv[0].split('/')[:-1])
+# # print(dir)
+# # print(os.path.join(dir ,'PuLP-2.5.1'))
+# sys.path.append(os.path.join(dir ,'PuLP-2.5.1'))
 import pulp
 
 
